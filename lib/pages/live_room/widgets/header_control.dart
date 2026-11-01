@@ -317,6 +317,17 @@ class _LiveHeaderControlState extends State<LiveHeaderControl>
                       player: player,
                     ),
                   ),
+                  PopupMenuItem(
+                    height: 42,
+                    onTap: showLoudnessBalanceSheet,
+                    child: const Row(
+                      spacing: 8,
+                      children: [
+                        Icon(Icons.graphic_eq, size: 20),
+                        Text('音量均衡', style: TextStyle(fontSize: 14)),
+                      ],
+                    ),
+                  ),
                   if (!plPlayerController.onlyPlayAudio.value)
                     PopupMenuItem(
                       height: 42,

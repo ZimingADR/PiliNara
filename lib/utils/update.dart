@@ -49,7 +49,13 @@ abstract final class Update {
       }
       final int latest =
           DateTime.parse(data['created_at']).millisecondsSinceEpoch ~/ 1000;
-      if (BuildConfig.buildTime >= latest) {
+      final String tagName = data['tag_name']?.toString() ?? '';
+      final bool isSameRelease =
+          (BuildConfig.commitHash != 'N/A' &&
+              data['target_commitish'] == BuildConfig.commitHash) ||
+          (BuildConfig.versionCode > 1 &&
+              tagName.endsWith('.${BuildConfig.versionCode}'));
+      if (BuildConfig.buildTime >= latest || isSameRelease) {
         if (!isAuto) {
           SmartDialog.showToast('已是最新版本');
         }

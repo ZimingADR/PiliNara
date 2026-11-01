@@ -663,6 +663,16 @@ class _AudioPageState extends State<AudioPage> {
                     HeaderControlState.showPlayerInfo(context, player: player);
                   },
                 ),
+                ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.graphic_eq, size: 20),
+                  title: const Text('音量均衡', style: TextStyle(fontSize: 14)),
+                  onTap: () {
+                    Get
+                      ..back()
+                      ..toNamed('/loudnessSetting');
+                  },
+                ),
                 if (PlatformUtils.isMobile)
                   ListTile(
                     dense: true,

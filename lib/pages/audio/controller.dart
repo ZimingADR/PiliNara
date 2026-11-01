@@ -61,8 +61,31 @@ class AudioController extends GetxController
         TripleMixin,
         FavMixin,
         BlockConfigMixin,
-        BlockMixin,
-        AudioNormalizationMixin {
+        BlockMixin {
+  static final Set<AudioController> _activeInstances = <AudioController>{};
+
+  static void syncAllAudioNormalization() {
+    for (final controller in _activeInstances) {
+      controller.applyAudioNormalization();
+    }
+  }
+
+  http_model.Volume? _currentVolume;
+
+  void applyAudioNormalization() {
+    final activePlayer = player;
+    if (activePlayer == null || isClosed) return;
+    final filter = AudioNormalization.buildMpvAfFilter(
+      config: Pref.audioNormalization,
+      targetLufs: Pref.loudnessTarget,
+      strength: Pref.loudnessStrength,
+      volume: _currentVolume,
+      fallbackConfig: Pref.fallbackNormalization,
+    );
+    try {
+      activePlayer.setProperty('af', filter);
+    } catch (_) {}
+  }
   late Int64 id;
   late Int64 oid;
   late List<Int64> subId;
@@ -161,6 +184,7 @@ class AudioController extends GetxController
   @override
   void onInit() {
     super.onInit();
+    _activeInstances.add(this);
     final args = Get.arguments;
     oid = Int64(args['oid']);
     final id = args['id'];
@@ -366,15 +390,17 @@ class AudioController extends GetxController
     String? referer,
     http_model.Volume? volume,
   }) async {
+    _currentVolume = volume;
     await _initPlayerIfNeeded();
-    final extras = audioFilterExtras(volume);
-    player
-      ?..setMediaHeader(
-        userAgent: ua,
-        // mpv cannot clear referer option
-        headers: {'Referer': ?referer},
-      )
-      ..open(Media(url, start: _start, extras: extras));
+    final activePlayer = player;
+    if (activePlayer == null) return;
+    activePlayer.setMediaHeader(
+      userAgent: ua,
+      // mpv cannot clear referer option
+      headers: {'Referer': ?referer},
+    );
+    await activePlayer.open(Media(url, start: _start));
+    applyAudioNormalization();
     _start = null;
   }
 
@@ -825,6 +851,7 @@ class AudioController extends GetxController
 
   @override
   void onClose() {
+    _activeInstances.remove(this);
     _stopStatusTimer();
     shutdownTimerService
       ..onPause = null

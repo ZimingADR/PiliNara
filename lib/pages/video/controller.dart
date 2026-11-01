@@ -1073,7 +1073,7 @@ class VideoDetailController extends GetxController
       tryLook: plPlayerController.tryLook,
       videoType: _actualVideoType ?? videoType,
       language: currLang.value,
-      voiceBalance: plPlayerController.enableAudioNormalization,
+      voiceBalance: true,
     );
   }
 

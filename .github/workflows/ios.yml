@@ -1,14 +1,35 @@
 name: Build for iOS
 
 on:
+  push:
+    tags:
+      - "v*"
   workflow_call:
     inputs:
       tag:
-        description: "tag"
+        description: "Release tag (leave empty to auto-generate v2.1.<buildNumber>)"
         required: false
         default: ""
         type: string
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (leave empty to auto-generate v2.1.<buildNumber>)"
+        required: false
+        default: ""
+        type: string
+      publish_release:
+        description: "Publish IPA to GitHub Releases & update altstore.json"
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ios-release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build-macos-app:
@@ -26,6 +47,43 @@ jobs:
           channel: stable
           flutter-version-file: pubspec.yaml
 
+      - name: Compute iOS release metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION_CODE=$(git rev-list --count HEAD | tr -d '[:space:]')
+          RAW_VERSION=$(awk -F': ' '/^version:/{split($2,a,"+"); print a[1]; exit}' pubspec.yaml | tr -d '[:space:]')
+          MAJOR_MINOR=$(echo "${RAW_VERSION:-2.1.0}" | awk -F'.' '{if (NF>=2) print $1"."$2; else print "2.1"}')
+          IOS_VERSION="${MAJOR_MINOR}.${VERSION_CODE}"
+
+          INPUT_TAG="${{ inputs.tag }}"
+          if [ -z "$INPUT_TAG" ] && [[ "${GITHUB_REF:-}" == refs/tags/* ]]; then
+            INPUT_TAG="${GITHUB_REF#refs/tags/}"
+          fi
+
+          if [ -n "$INPUT_TAG" ]; then
+            RELEASE_TAG="$INPUT_TAG"
+            CLEAN_VER="${INPUT_TAG#v}"
+            if [[ "$CLEAN_VER" =~ ^[0-9]+(\.[0-9]+)+$ ]]; then
+              IOS_VERSION="$CLEAN_VER"
+            fi
+          else
+            RELEASE_TAG="v${IOS_VERSION}"
+          fi
+
+          SHOULD_PUBLISH="true"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.publish_release }}" = "false" ]; then
+            SHOULD_PUBLISH="false"
+          fi
+
+          IPA_NAME="PiliNara_ios_${IOS_VERSION}.ipa"
+          echo "VERSION_CODE=${VERSION_CODE}" >> "$GITHUB_ENV"
+          echo "IOS_VERSION=${IOS_VERSION}" >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=${RELEASE_TAG}" >> "$GITHUB_ENV"
+          echo "IPA_NAME=${IPA_NAME}" >> "$GITHUB_ENV"
+          echo "SHOULD_PUBLISH=${SHOULD_PUBLISH}" >> "$GITHUB_ENV"
+          echo "Resolved iOS build: version=${IOS_VERSION}, build=${VERSION_CODE}, tag=${RELEASE_TAG}, ipa=${IPA_NAME}, publish=${SHOULD_PUBLISH}"
+
       - name: Set and Extract version
         shell: pwsh
         run: lib/scripts/build.ps1
@@ -34,27 +92,93 @@ jobs:
         shell: pwsh
         run: lib/scripts/patch.ps1 iOS
 
-      - name: Build iOS
+      - name: Build iOS & Package IPA
+        shell: bash
         run: |
-          flutter build ios --release --no-codesign --dart-define-from-file=pili_release.json --no-pub
-          ln -sf ./build/ios/iphoneos Payload
-          # make AltSign happy...
-          find Payload/Runner.app/Frameworks -type d -name "*.framework" -exec codesign --force --sign - --preserve-metadata=identifier,entitlements {} \;
-          zip -r9 PiliNara_ios_${{env.version}}.ipa Payload/runner.app
+          set -euo pipefail
+          flutter build ios \
+            --release \
+            --no-codesign \
+            --dart-define-from-file=pili_release.json \
+            --no-pub \
+            --build-name="${IOS_VERSION}" \
+            --build-number="${VERSION_CODE}"
 
-      - name: Release
-        if: ${{ github.event.inputs.tag != '' }}
+          rm -rf Payload "${IPA_NAME}"
+          mkdir -p Payload
+          cp -R build/ios/iphoneos/Runner.app Payload/Runner.app
+
+          # Make AltSign / SideStore / LiveContainer happy by ad-hoc signing embedded frameworks
+          find Payload/Runner.app/Frameworks -type d -name "*.framework" -exec codesign --force --sign - --preserve-metadata=identifier,entitlements {} \;
+
+          zip -qry "${IPA_NAME}" Payload
+          cp "${IPA_NAME}" "${RUNNER_TEMP}/${IPA_NAME}"
+          ls -lh "${IPA_NAME}"
+
+      - name: Update altstore.json
+        if: ${{ env.SHOULD_PUBLISH == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          DOWNLOAD_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}/${IPA_NAME}"
+          COMMIT_MSG=$(git log -1 --pretty=%s)
+          NOTES=$(printf "PiliNara iOS %s (Build %s)\n- 融合 BewlyCat 智能音量平衡（跨视频响度对齐 + 视频内局部动态平滑 + -1.0 dBFS 峰值防破音）\n- 支持普通播放、后台播放、后台只听音频、听视频、独立听音频、画中画、离线缓存与直播\n- 提交记录: %s" "${IOS_VERSION}" "${VERSION_CODE}" "${COMMIT_MSG}")
+
+          python3 lib/scripts/update_altstore_source.py \
+            --source-json altstore.json \
+            --app-bundle Payload/Runner.app \
+            --ipa "${IPA_NAME}" \
+            --download-url "${DOWNLOAD_URL}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --version "${IOS_VERSION}" \
+            --build-version "${VERSION_CODE}" \
+            --description "${NOTES}"
+
+          cp altstore.json "${RUNNER_TEMP}/altstore.json"
+
+      - name: Publish GitHub Release
+        if: ${{ env.SHOULD_PUBLISH == 'true' }}
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: ${{ github.event.inputs.tag }}
-          name: ${{ github.event.inputs.tag }}
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: "PiliNara iOS ${{ env.RELEASE_TAG }}"
           target_commitish: ${{ github.sha }}
+          generate_release_notes: true
+          body: |
+            ### PiliNara iOS ${{ env.IOS_VERSION }} (Build ${{ env.VERSION_CODE }})
+            - **智能音量平衡（BewlyCat 风格）**：自动拉齐不同视频整体响度，实时平滑单视频内轻声与高音起伏，内置 -1.0 dBFS 前瞻峰值防破音保护；全面覆盖普通播放、后台播放、后台只听音频、听视频、独立听音频、画中画、离线缓存与直播场景。
+            - **LiveContainer / SideStore 订阅源直链**：
+              `https://raw.githubusercontent.com/${{ github.repository }}/main/altstore.json`
           files: |
-            PiliNara_ios_*.ipa
+            ${{ runner.temp }}/${{ env.IPA_NAME }}
+            ${{ runner.temp }}/altstore.json
 
-      - name: Upload ios release
+      - name: Commit updated altstore.json to main
+        if: ${{ env.SHOULD_PUBLISH == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git reset --hard HEAD
+          git clean -fd
+          git fetch origin main
+          git checkout -B main origin/main
+          cp "${RUNNER_TEMP}/altstore.json" altstore.json
+
+          if ! git diff --quiet -- altstore.json; then
+            git add altstore.json
+            git commit -m "chore(ios): update altstore.json for ${RELEASE_TAG} [skip ci]"
+            git pull --rebase origin main
+            git push origin HEAD:main
+          else
+            echo "altstore.json unchanged, skipping commit."
+          fi
+
+      - name: Upload iOS release artifact
         uses: actions/upload-artifact@v7
         with:
           archive: false
           name: iOS-release
-          path: PiliNara_ios_*.ipa
+          path: ${{ runner.temp }}/${{ env.IPA_NAME }}

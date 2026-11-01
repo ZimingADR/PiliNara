@@ -611,6 +611,23 @@ class HeaderControlState extends State<HeaderControl>
                         ),
                       ),
                     ),
+                if (plPlayerController.videoPlayerController != null)
+                  Obx(() {
+                    final summary = plPlayerController.loudnessActiveSummary;
+                    return ListTile(
+                      dense: true,
+                      leading: const Icon(Icons.graphic_eq, size: 20),
+                      title: const Text('音量均衡', style: titleStyle),
+                      subtitle: Text(
+                        summary.shortStatusText,
+                        style: subTitleStyle,
+                      ),
+                      onTap: () {
+                        Get.back();
+                        showLoudnessBalanceSheet();
+                      },
+                    );
+                  }),
                 if (!isFileSource)
                   ListTile(
                     dense: true,
@@ -719,6 +736,15 @@ class HeaderControlState extends State<HeaderControl>
                                 .value,
                           ),
                         ),
+                      Obx(
+                        () => ActionRowLineItem(
+                          iconData: Icons.graphic_eq,
+                          onTap: plPlayerController.toggleLoudnessBalance,
+                          text: " 音量均衡 ",
+                          selectStatus:
+                              plPlayerController.enableAudioNormalization,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -930,6 +956,7 @@ class HeaderControlState extends State<HeaderControl>
   }) {
     final hwdec = player.getProperty('hwdec-current');
     final vo = player.getProperty('current-vo');
+    final af = player.getProperty('af');
     final volume =
         '${(double.tryParse(player.getProperty('volume')) ?? 0).toStringAsFixed(1)}%';
     showDialog(
@@ -1000,6 +1027,12 @@ class HeaderControlState extends State<HeaderControl>
                       title: const Text("Volume"),
                       subtitle: Text(volume),
                       onTap: () => Utils.copyText('Volume\n$volume'),
+                    ),
+                    ListTile(
+                      dense: true,
+                      title: const Text("AF"),
+                      subtitle: Text(af.isEmpty ? 'none' : af),
+                      onTap: () => Utils.copyText('AF\n$af'),
                     ),
                     ListTile(
                       dense: true,
@@ -2059,6 +2092,26 @@ class HeaderControlState extends State<HeaderControl>
                         : const SizedBox.shrink(),
                   ),
                 if (!isPortrait || isFullScreen || PlatformUtils.isDesktop) ...[
+                  Obx(() {
+                    if (!plPlayerController.showPlayerLoudnessBtn.value) {
+                      return const SizedBox.shrink();
+                    }
+                    final enabled = plPlayerController.enableAudioNormalization;
+                    return SizedBox(
+                      width: btnWidth,
+                      height: btnHeight,
+                      child: IconButton(
+                        tooltip: '音量均衡',
+                        style: btnStyle,
+                        onPressed: showLoudnessBalanceSheet,
+                        icon: Icon(
+                          Icons.graphic_eq,
+                          size: 19,
+                          color: enabled ? Colors.white : Colors.white54,
+                        ),
+                      ),
+                    );
+                  }),
                   SizedBox(
                     width: btnWidth,
                     height: btnHeight,

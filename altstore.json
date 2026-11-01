@@ -1,0 +1,41 @@
+{
+  "name": "PiliNara",
+  "subtitle": "融合 BewlyCat 智能音量平衡的第三方 BiliBili 客户端",
+  "description": "基于 PiliNara 融合 BewlyCat 智能音量平衡（跨视频响度对齐 + 视频内局部动态平滑 + 防爆音限制），支持 LiveContainer 与 SideStore 一键安装与更新。",
+  "identifier": "io.github.zimingadr.pilinara.source",
+  "sourceURL": "https://raw.githubusercontent.com/ZimingADR/PiliNara/main/altstore.json",
+  "website": "https://github.com/ZimingADR/PiliNara",
+  "iconURL": "https://raw.githubusercontent.com/ZimingADR/PiliNara/main/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-1024x1024@1x.png",
+  "tintColor": "#FB7299",
+  "featuredApps": [
+    "com.example.pilinara"
+  ],
+  "apps": [
+    {
+      "name": "PiliNara",
+      "bundleIdentifier": "com.example.pilinara",
+      "developerName": "ZimingADR",
+      "subtitle": "支持智能音量平衡的第三方 BiliBili 客户端",
+      "localizedDescription": "使用 Flutter 开发的第三方 BiliBili 客户端，融合 BewlyCat 智能音量平衡（跨视频响度对齐 + 单视频局部动态平滑 + -1.0 dBFS 峰值防破音），支持普通播放、后台播放、后台只听音频、听视频、独立听音频、画中画、离线缓存与直播。",
+      "iconURL": "https://raw.githubusercontent.com/ZimingADR/PiliNara/main/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-1024x1024@1x.png",
+      "tintColor": "#FB7299",
+      "category": "entertainment",
+      "screenshotURLs": [
+        "https://raw.githubusercontent.com/ZimingADR/PiliNara/main/assets/screenshots/home.png",
+        "https://raw.githubusercontent.com/ZimingADR/PiliNara/main/assets/screenshots/bangumi_detail.png",
+        "https://raw.githubusercontent.com/ZimingADR/PiliNara/main/assets/screenshots/dynamic.png"
+      ],
+      "appPermissions": {
+        "entitlements": [],
+        "privacy": {
+          "NSAppleMusicUsageDescription": "App需要您的同意,才能访问媒体资料库",
+          "NSCameraUsageDescription": "App需要您的同意,才能访问相册",
+          "NSLocalNetworkUsageDescription": "需要访问本地网络以发现和连接 DLNA 投屏设备",
+          "NSPhotoLibraryUsageDescription": "请允许APP保存图片到相册"
+        }
+      },
+      "versions": []
+    }
+  ],
+  "news": []
+}

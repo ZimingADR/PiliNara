@@ -321,3 +321,45 @@ foreach ($patch in $patches_cupertino) {
         throw "$LASTEXITCODE"
     }
 }
+
+if ($platform.ToLower() -eq "ios") {
+    $MediaKitDir = Get-ChildItem "$PubCacheDir/git" -Directory |
+        Where-Object { $_.Name -like "media-kit-*" } |
+        Select-Object -Last 1
+
+    if (-not $MediaKitDir) {
+        throw "media-kit package not found in pub git cache"
+    }
+
+    $IosLibDir = Join-Path $MediaKitDir.FullName "libs/ios/media_kit_libs_ios_video/ios"
+    $MakefilePath = Join-Path $IosLibDir "Makefile"
+    if (-not (Test-Path $MakefilePath)) {
+        throw "media_kit_libs_ios_video Makefile not found at $MakefilePath"
+    }
+
+    $EncodersGplSha256 = "88a0139a3223c6a4bc557bd0e50d0ac341910e38f508edc9691f7bebf3870101"
+    $RawMakefile = [System.IO.File]::ReadAllText($MakefilePath)
+    $UpdatedMakefile = $RawMakefile `
+        -replace 'MPV_XCFRAMEWORKS_SHA256SUM=[0-9a-fA-F]{64}', "MPV_XCFRAMEWORKS_SHA256SUM=$EncodersGplSha256" `
+        -replace '_ios-universal-video-default\.tar\.gz', '_ios-universal-video-encodersgpl.tar.gz'
+
+    if (-not ($UpdatedMakefile.Contains("_ios-universal-video-encodersgpl.tar.gz") -and $UpdatedMakefile.Contains($EncodersGplSha256))) {
+        throw "Failed to patch media_kit_libs_ios_video Makefile for encodersgpl"
+    }
+
+    [System.IO.File]::WriteAllText(
+        $MakefilePath,
+        $UpdatedMakefile,
+        [System.Text.UTF8Encoding]::new($false)
+    )
+
+    $CacheDir = Join-Path $IosLibDir ".cache"
+    if (Test-Path $CacheDir) {
+        Remove-Item -Path $CacheDir -Recurse -Force
+    }
+    Write-Host "Patched media_kit_libs_ios_video Makefile to encodersgpl ($EncodersGplSha256)"
+}
+
+if ($env:GITHUB_WORKSPACE) {
+    Set-Location $env:GITHUB_WORKSPACE
+}
