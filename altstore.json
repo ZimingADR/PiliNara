@@ -34,7 +34,24 @@
           "NSPhotoLibraryUsageDescription": "请允许APP保存图片到相册"
         }
       },
-      "versions": []
+      "versions": [
+        {
+          "version": "2.1.6117",
+          "buildVersion": "6117",
+          "buildNumber": "6117",
+          "date": "2026-11-01T16:00:14Z",
+          "localizedDescription": "PiliNara iOS 2.1.6117 (Build 6117)\n- 融合 BewlyCat 智能音量平衡（跨视频响度对齐 + 视频内局部动态平滑 + -1.0 dBFS 峰值防破音）\n- 支持普通播放、后台播放、后台只听音频、听视频、独立听音频、画中画、离线缓存与直播\n- 提交记录: feat: integrate BewlyCat volume balance, iOS IPA release action & AltStore source",
+          "downloadURL": "https://github.com/ZimingADR/PiliNara/releases/download/v2.1.6117/PiliNara_ios_2.1.6117.ipa",
+          "size": 32542649,
+          "sha256": "a8b5d4460ad1bdbc3619d543808c8fdd97a8bc05cb1e62e0811615b253846d83",
+          "minOSVersion": "15.0"
+        }
+      ],
+      "version": "2.1.6117",
+      "versionDate": "2026-11-01T16:00:14Z",
+      "versionDescription": "PiliNara iOS 2.1.6117 (Build 6117)\n- 融合 BewlyCat 智能音量平衡（跨视频响度对齐 + 视频内局部动态平滑 + -1.0 dBFS 峰值防破音）\n- 支持普通播放、后台播放、后台只听音频、听视频、独立听音频、画中画、离线缓存与直播\n- 提交记录: feat: integrate BewlyCat volume balance, iOS IPA release action & AltStore source",
+      "downloadURL": "https://github.com/ZimingADR/PiliNara/releases/download/v2.1.6117/PiliNara_ios_2.1.6117.ipa",
+      "size": 32542649
     }
   ],
   "news": []
