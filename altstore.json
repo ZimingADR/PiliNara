@@ -36,6 +36,17 @@
       },
       "versions": [
         {
+          "version": "2.2.6199",
+          "buildVersion": "6199",
+          "buildNumber": "6199",
+          "date": "2026-11-07T07:56:19Z",
+          "localizedDescription": "PiliNara iOS 2.2.6199 (Build 6199)\n- 同步上游最新更新并融合 BewlyCat 智能音量平衡\n- 最新提交: chore(sync): merge upstream Starfallan/PiliNara@1db0d72e4 (v2.2.0) & add automated upstream sync workflow\n- 近期上游更新摘录:\n  · fix(player): defer desktop touch fullscreen until pointer release\n  · fix(player): prevent trackpad seeking from panning video (#417)\n  · fix(player): restore speed when switching videos during long press\n  · upgrade deps\n  · fix AppSign\n  · show aid in intro panel",
+          "downloadURL": "https://github.com/ZimingADR/PiliNara/releases/download/v2.2.6199/PiliNara_ios_2.2.6199.ipa",
+          "size": 32914603,
+          "sha256": "58f783c2529c7043be2cab908ade60b6a3fb25ed09f315e00e967ada4dd268bd",
+          "minOSVersion": "15.0"
+        },
+        {
           "version": "2.1.6117",
           "buildVersion": "6117",
           "buildNumber": "6117",
@@ -47,11 +58,11 @@
           "minOSVersion": "15.0"
         }
       ],
-      "version": "2.1.6117",
-      "versionDate": "2026-11-01T16:00:14Z",
-      "versionDescription": "PiliNara iOS 2.1.6117 (Build 6117)\n- 融合 BewlyCat 智能音量平衡（跨视频响度对齐 + 视频内局部动态平滑 + -1.0 dBFS 峰值防破音）\n- 支持普通播放、后台播放、后台只听音频、听视频、独立听音频、画中画、离线缓存与直播\n- 提交记录: feat: integrate BewlyCat volume balance, iOS IPA release action & AltStore source",
-      "downloadURL": "https://github.com/ZimingADR/PiliNara/releases/download/v2.1.6117/PiliNara_ios_2.1.6117.ipa",
-      "size": 32542649
+      "version": "2.2.6199",
+      "versionDate": "2026-11-07T07:56:19Z",
+      "versionDescription": "PiliNara iOS 2.2.6199 (Build 6199)\n- 同步上游最新更新并融合 BewlyCat 智能音量平衡\n- 最新提交: chore(sync): merge upstream Starfallan/PiliNara@1db0d72e4 (v2.2.0) & add automated upstream sync workflow\n- 近期上游更新摘录:\n  · fix(player): defer desktop touch fullscreen until pointer release\n  · fix(player): prevent trackpad seeking from panning video (#417)\n  · fix(player): restore speed when switching videos during long press\n  · upgrade deps\n  · fix AppSign\n  · show aid in intro panel",
+      "downloadURL": "https://github.com/ZimingADR/PiliNara/releases/download/v2.2.6199/PiliNara_ios_2.2.6199.ipa",
+      "size": 32914603
     }
   ],
   "news": []
