@@ -1,0 +1,109 @@
+name: Sync Upstream & Auto Release iOS
+
+on:
+  schedule:
+    # 每 6 小时巡检一次上游 Starfallan/PiliNara 更新（北京时间 02:15 / 08:15 / 14:15 / 20:15）
+    - cron: "15 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      force_build:
+        description: "即使上游无新提交也强制重新打包发布 iOS"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: sync-upstream-main
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Check & Merge Upstream
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.merge.outputs.should_build }}
+      synced_sha: ${{ steps.merge.outputs.synced_sha }}
+    steps:
+      - name: Checkout fork main
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.SYNC_PAT || github.token }}
+
+      - name: Check and merge Starfallan/PiliNara
+        id: merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HAS_SYNC_PAT: ${{ secrets.SYNC_PAT != '' && 'true' || 'false' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git remote add upstream https://github.com/Starfallan/PiliNara.git
+          git fetch upstream main
+
+          BEHIND_COUNT=$(git rev-list --count HEAD..upstream/main | tr -d '[:space:]')
+          UPSTREAM_SHA=$(git rev-parse --short upstream/main)
+          echo "Commits behind Starfallan/PiliNara:main = ${BEHIND_COUNT} (upstream HEAD: ${UPSTREAM_SHA})"
+
+          if [ "${BEHIND_COUNT}" = "0" ]; then
+            CURRENT_SHA=$(git rev-parse HEAD)
+            echo "synced_sha=${CURRENT_SHA}" >> "$GITHUB_OUTPUT"
+            if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.force_build }}" = "true" ]; then
+              echo "No new upstream commits, but force_build=true -> triggering iOS build."
+              echo "should_build=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "Already up to date with Starfallan/PiliNara:main. Skipping iOS build."
+              echo "should_build=false" >> "$GITHUB_OUTPUT"
+            fi
+            exit 0
+          fi
+
+          if ! git merge --no-commit --no-ff upstream/main; then
+            CONFLICTS=$(git diff --name-only --diff-filter=U || true)
+            git merge --abort || true
+            echo "::error::Automatic merge failed due to conflicts with upstream/main (${UPSTREAM_SHA})."
+            echo "Conflicting files:"
+            echo "${CONFLICTS}"
+
+            ISSUE_TITLE="⚠️ 自动同步上游失败：存在代码冲突需处理"
+            EXISTING_ISSUE=$(gh issue list --repo "${GITHUB_REPOSITORY}" --state open --search "${ISSUE_TITLE} in:title" --json number --jq '.[0].number // empty' || true)
+            BODY=$(printf "自动同步上游 \`Starfallan/PiliNara@%s\`（共 %s 个新提交）时检测到代码冲突，已安全中止合并。\n\n### 冲突文件\n\`\`\`\n%s\n\`\`\`\n\n请在本地合并解决冲突并推送到 \`main\` 后即可自动恢复同步。" "${UPSTREAM_SHA}" "${BEHIND_COUNT}" "${CONFLICTS}")
+            if [ -n "${EXISTING_ISSUE}" ]; then
+              gh issue comment "${EXISTING_ISSUE}" --repo "${GITHUB_REPOSITORY}" --body "${BODY}" || true
+            else
+              gh issue create --repo "${GITHUB_REPOSITORY}" --title "${ISSUE_TITLE}" --body "${BODY}" || true
+            fi
+            exit 1
+          fi
+
+          WORKFLOW_CHANGES=$(git diff --cached --name-only -- .github/workflows/ || true)
+          if [ -n "${WORKFLOW_CHANGES}" ] && [ "${HAS_SYNC_PAT}" != "true" ]; then
+            echo "::warning::Upstream modified .github/workflows/* and SYNC_PAT is not set; preserving fork's .github/workflows/* so GITHUB_TOKEN push succeeds."
+            git checkout HEAD -- .github/workflows/
+          fi
+
+          git commit --allow-empty -m "chore(sync): merge upstream Starfallan/PiliNara@${UPSTREAM_SHA} (${BEHIND_COUNT} commits)"
+          git push origin HEAD:main
+
+          NEW_SHA=$(git rev-parse HEAD)
+          echo "should_build=true" >> "$GITHUB_OUTPUT"
+          echo "synced_sha=${NEW_SHA}" >> "$GITHUB_OUTPUT"
+          echo "Successfully merged ${BEHIND_COUNT} upstream commits -> ${NEW_SHA}"
+
+  build-ios:
+    name: Build & Publish Updated iOS IPA
+    needs: sync
+    if: needs.sync.outputs.should_build == 'true'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/ios.yml
+    with:
+      ref: ${{ needs.sync.outputs.synced_sha }}
