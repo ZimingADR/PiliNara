@@ -1177,9 +1177,7 @@ class PlPlayerController with BlockConfigMixin, AudioNormalizationMixin {
   bool get processing => _processing;
 
   // offline
-  DataSource? _safeDataSource;
-  DataSource? get safeDataSource => _safeDataSource;
-  bool get isFileSource => _safeDataSource is FileSource;
+  bool get isFileSource => dataSource is FileSource;
 
   // 初始化资源
   Future<void> setDataSource(
@@ -1242,7 +1240,6 @@ class PlPlayerController with BlockConfigMixin, AudioNormalizationMixin {
       this.width = width;
       this.height = height;
       this.dataSource = dataSource;
-      _safeDataSource = dataSource;
       _autoPlay = autoplay;
       // 初始化数据加载状态
       dataStatus.value = DataStatus.loading;

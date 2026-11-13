@@ -63,8 +63,6 @@ class AudioController extends GetxController
         AudioNormalizationMixin {
   static final Set<AudioController> _activeInstances = <AudioController>{};
 
-  static AudioController? get activeInstance => _activeInstances.lastOrNull;
-
   static void syncAllAudioNormalization() {
     for (final controller in _activeInstances) {
       controller.applyAudioNormalization();
@@ -72,8 +70,6 @@ class AudioController extends GetxController
   }
 
   http_model.Volume? _currentVolume;
-  http_model.Volume? get currentVolume => _currentVolume;
-  String? currentAudioUrl;
 
   void applyAudioNormalization() {
     final activePlayer = player;
@@ -425,7 +421,6 @@ class AudioController extends GetxController
     http_model.Volume? volume,
   }) async {
     _currentVolume = volume;
-    currentAudioUrl = url;
     await _initPlayerIfNeeded();
     final activePlayer = player;
     if (activePlayer == null) return;

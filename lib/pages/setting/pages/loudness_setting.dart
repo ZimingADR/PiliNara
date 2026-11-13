@@ -5,7 +5,6 @@ import 'package:PiliPlus/plugin/pl_player/controller.dart';
 import 'package:PiliPlus/utils/storage.dart';
 import 'package:PiliPlus/utils/storage_key.dart';
 import 'package:PiliPlus/utils/storage_pref.dart';
-import 'package:PiliPlus/widgets/loudness_waveform_card.dart';
 import 'package:get/get.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -275,10 +274,7 @@ class _LoudnessSettingPageState extends State<LoudnessSettingPage> {
     final theme = Theme.of(context);
     final isBewly = _activeOrLastMode == AudioNormalization.bewlyCode;
     final activePlayer = PlPlayerController.instance;
-    final activeAudio = AudioController.activeInstance;
     final hasActiveVideo = activePlayer?.videoPlayerController != null;
-    final hasActiveAudio = activeAudio?.player != null;
-    final dataSource = activePlayer?.safeDataSource;
 
     return Scaffold(
       appBar: AppBar(
@@ -298,41 +294,6 @@ class _LoudnessSettingPageState extends State<LoudnessSettingPage> {
             subtitle: const Text('自动拉齐不同视频音量，平滑单视频内轻声与高音起伏'),
             value: _isEnabled,
             onChanged: _toggleEnabled,
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-            child: LoudnessWaveformCard(
-              enabled: _isEnabled,
-              config: _mode,
-              targetLufs: _targetLufs.round(),
-              strength: _strength.round(),
-              fallbackConfig: _fallbackMode,
-              isLive: hasActiveVideo ? activePlayer!.isLive : false,
-              volume: hasActiveVideo
-                  ? activePlayer!.currentVolume.value
-                  : activeAudio?.currentVolume,
-              audioUrl: hasActiveVideo
-                  ? dataSource?.audioSource
-                  : activeAudio?.currentAudioUrl,
-              videoUrl: hasActiveVideo ? dataSource?.videoSource : null,
-              isFileSource:
-                  hasActiveVideo ? activePlayer!.isFileSource : false,
-              position: hasActiveVideo
-                  ? (activePlayer!.videoPlayerController?.state.position ??
-                        Duration(seconds: activePlayer.position.value))
-                  : (hasActiveAudio
-                        ? Duration(seconds: activeAudio!.position.value)
-                        : Duration.zero),
-              duration: hasActiveVideo
-                  ? Duration(seconds: activePlayer!.duration.value)
-                  : (hasActiveAudio
-                        ? Duration(seconds: activeAudio!.duration.value)
-                        : Duration.zero),
-              positionStream: hasActiveVideo
-                  ? activePlayer!.videoPlayerController?.stream.position
-                  : activeAudio?.player?.stream.position,
-              compact: false,
-            ),
           ),
           _SectionTitle('基础设置', theme),
           ListTile(

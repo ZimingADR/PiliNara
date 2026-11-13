@@ -1,7 +1,4 @@
-import 'dart:typed_data';
-
 import 'package:PiliPlus/models/common/audio_normalization.dart';
-import 'package:PiliPlus/models/common/loudness_waveform.dart';
 import 'package:PiliPlus/models/video/play/url.dart' show Volume;
 import 'package:flutter_test/flutter_test.dart';
 
@@ -219,50 +216,6 @@ void main() {
         ),
         '当前:「智能音量平衡」· 目标 -18 LUFS · 强度 75%',
       );
-    });
-  });
-
-  group('LoudnessWaveformDsp (Waveform Sampling & Simulation)', () {
-    test('Int16 PCM 字节流准确解析为 RMS 与 Peak 波形桶', () {
-      final samples = Int16List(640);
-      for (var i = 0; i < 320; i++) {
-        samples[i] = 3277; // ~0.1 (-20 dBFS)
-      }
-      for (var i = 320; i < 640; i++) {
-        samples[i] = 16384; // ~0.5 (-6 dBFS)
-      }
-      final buckets = LoudnessWaveformDsp.bucketsFromInt16Pcm(
-        samples.buffer.asUint8List(),
-        targetCount: 16,
-      );
-      expect(buckets.length, 16);
-      expect(buckets.first.rms, closeTo(0.1, 0.01));
-      expect(buckets.last.rms, closeTo(0.5, 0.01));
-    });
-
-    test('波形模拟器对轻声视频提亮且所有峰值严格限制在 -1.0 dBFS 以内', () {
-      final raw = LoudnessWaveformDsp.buildMetadataFallback(
-        volume: _makeVolume(measuredI: -28.0, measuredLra: 12.0, measuredTp: -0.4),
-      );
-      expect(raw.rawBuckets.length, LoudnessWaveformDsp.defaultBucketCount);
-
-      final simOn = LoudnessWaveformDsp.simulate(
-        raw: raw,
-        config: AudioNormalization.bewlyCode,
-        targetLufs: -18,
-        strength: 80,
-        volume: _makeVolume(measuredI: -28.0, measuredLra: 12.0, measuredTp: -0.4),
-      );
-      expect(simOn.processedAvgDb, greaterThan(simOn.rawAvgDb));
-      expect(simOn.processedPeakDb, lessThanOrEqualTo(-0.99));
-
-      final simOff = LoudnessWaveformDsp.simulate(
-        raw: raw,
-        config: AudioNormalization.disableCode,
-        targetLufs: -18,
-        strength: 80,
-      );
-      expect(simOff.processedBuckets, equals(simOff.rawBuckets));
     });
   });
 }
