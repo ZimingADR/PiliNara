@@ -36,6 +36,17 @@
       },
       "versions": [
         {
+          "version": "2.2.6239",
+          "buildVersion": "6239",
+          "buildNumber": "6239",
+          "date": "2026-11-13T09:05:10Z",
+          "localizedDescription": "PiliNara iOS 2.2.6239 (Build 6239)\n- 融合 BewlyCat 智能音量平衡（跨视频响度对齐 + 视频内局部动态平滑 + -1.0 dBFS 峰值防破音）\n- 支持普通播放、后台播放、后台只听音频、听视频、独立听音频、画中画、离线缓存与直播\n- 提交记录: refactor(audio): remove experimental loudness waveform comparison card",
+          "downloadURL": "https://github.com/ZimingADR/PiliNara/releases/download/v2.2.6239/PiliNara_ios_2.2.6239.ipa",
+          "size": 32996870,
+          "sha256": "02f6d8050d5ed3ec9f1cb58e2c9580600038a06e5d3f66dea5a4f3376110013c",
+          "minOSVersion": "15.0"
+        },
+        {
           "version": "2.2.6237",
           "buildVersion": "6237",
           "buildNumber": "6237",
@@ -69,11 +80,11 @@
           "minOSVersion": "15.0"
         }
       ],
-      "version": "2.2.6237",
-      "versionDate": "2026-11-13T08:11:15Z",
-      "versionDescription": "PiliNara iOS 2.2.6237 (Build 6237)\n- 同步上游最新更新并融合 BewlyCat 智能音量平衡\n- 最新提交: feat(audio): merge upstream & upgrade loudness algorithm + on-demand waveform comparison\n- 近期上游更新摘录:\n  · ci(linux): 补装 elfutils 修复 rpm 打包缺 eu-strip\n  · feat(changelog): 添加 2.6.2 -[Aha] 更新日志\n  · style(settings): align dynamics icon with upstream\n  · feat(search): support hash-prefixed video tag filters\n  · feat(ai-chat): support request cancellation from send button\n  · feat: pick rcmd source in a dialog with per-source description (#3517)",
-      "downloadURL": "https://github.com/ZimingADR/PiliNara/releases/download/v2.2.6237/PiliNara_ios_2.2.6237.ipa",
-      "size": 33032583
+      "version": "2.2.6239",
+      "versionDate": "2026-11-13T09:05:10Z",
+      "versionDescription": "PiliNara iOS 2.2.6239 (Build 6239)\n- 融合 BewlyCat 智能音量平衡（跨视频响度对齐 + 视频内局部动态平滑 + -1.0 dBFS 峰值防破音）\n- 支持普通播放、后台播放、后台只听音频、听视频、独立听音频、画中画、离线缓存与直播\n- 提交记录: refactor(audio): remove experimental loudness waveform comparison card",
+      "downloadURL": "https://github.com/ZimingADR/PiliNara/releases/download/v2.2.6239/PiliNara_ios_2.2.6239.ipa",
+      "size": 32996870
     }
   ],
   "news": []
