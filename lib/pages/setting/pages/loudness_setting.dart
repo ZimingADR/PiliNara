@@ -5,6 +5,7 @@ import 'package:PiliPlus/plugin/pl_player/controller.dart';
 import 'package:PiliPlus/utils/storage.dart';
 import 'package:PiliPlus/utils/storage_key.dart';
 import 'package:PiliPlus/utils/storage_pref.dart';
+import 'package:PiliPlus/widgets/loudness_waveform_card.dart';
 import 'package:get/get.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -262,7 +263,7 @@ class _LoudnessSettingPageState extends State<LoudnessSettingPage> {
 
   String _modeSubtitle(String mode) => switch (mode) {
     AudioNormalization.bewlyCode =>
-      '跨视频基准对齐 + 视频内局部动态平滑 + -1.0 dBFS 峰值防爆音限制（推荐）',
+      '跨视频对齐目标响度 + LRA 自适应动态平滑 + -1.0 dBFS 自适应峰值防爆音（推荐）',
     AudioNormalization.dynaudnormCode => '使用传统 dynaudnorm 动态增益平滑',
     AudioNormalization.loudnormCode =>
       '使用服务端响度测量值进行 EBU R128 线性校准',
@@ -274,7 +275,10 @@ class _LoudnessSettingPageState extends State<LoudnessSettingPage> {
     final theme = Theme.of(context);
     final isBewly = _activeOrLastMode == AudioNormalization.bewlyCode;
     final activePlayer = PlPlayerController.instance;
-    final hasActivePlayback = activePlayer?.videoPlayerController != null;
+    final activeAudio = AudioController.activeInstance;
+    final hasActiveVideo = activePlayer?.videoPlayerController != null;
+    final hasActiveAudio = activeAudio?.player != null;
+    final dataSource = activePlayer?.safeDataSource;
 
     return Scaffold(
       appBar: AppBar(
@@ -294,6 +298,41 @@ class _LoudnessSettingPageState extends State<LoudnessSettingPage> {
             subtitle: const Text('自动拉齐不同视频音量，平滑单视频内轻声与高音起伏'),
             value: _isEnabled,
             onChanged: _toggleEnabled,
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+            child: LoudnessWaveformCard(
+              enabled: _isEnabled,
+              config: _mode,
+              targetLufs: _targetLufs.round(),
+              strength: _strength.round(),
+              fallbackConfig: _fallbackMode,
+              isLive: hasActiveVideo ? activePlayer!.isLive : false,
+              volume: hasActiveVideo
+                  ? activePlayer!.currentVolume.value
+                  : activeAudio?.currentVolume,
+              audioUrl: hasActiveVideo
+                  ? dataSource?.audioSource
+                  : activeAudio?.currentAudioUrl,
+              videoUrl: hasActiveVideo ? dataSource?.videoSource : null,
+              isFileSource:
+                  hasActiveVideo ? activePlayer!.isFileSource : false,
+              position: hasActiveVideo
+                  ? (activePlayer!.videoPlayerController?.state.position ??
+                        Duration(seconds: activePlayer.position.value))
+                  : (hasActiveAudio
+                        ? Duration(seconds: activeAudio!.position.value)
+                        : Duration.zero),
+              duration: hasActiveVideo
+                  ? Duration(seconds: activePlayer!.duration.value)
+                  : (hasActiveAudio
+                        ? Duration(seconds: activeAudio!.duration.value)
+                        : Duration.zero),
+              positionStream: hasActiveVideo
+                  ? activePlayer!.videoPlayerController?.stream.position
+                  : activeAudio?.player?.stream.position,
+              compact: false,
+            ),
           ),
           _SectionTitle('基础设置', theme),
           ListTile(
@@ -397,7 +436,7 @@ class _LoudnessSettingPageState extends State<LoudnessSettingPage> {
                 value: _strength,
                 min: AudioNormalization.minStrength.toDouble(),
                 max: AudioNormalization.maxStrength.toDouble(),
-                divisions: 12,
+                divisions: 20,
                 label: '${_strength.round()}%',
                 onChanged: _onStrengthChanged,
                 onChangeEnd: _onStrengthChangeEnd,
@@ -406,7 +445,7 @@ class _LoudnessSettingPageState extends State<LoudnessSettingPage> {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
               child: Text(
-                '强度越高，同一视频内小声对白与大声特效的音量越接近；低于 -50 LUFS 的静音与底噪会自动冻结不放大。',
+                '0% 仅拉齐跨视频整体响度；调高可提升低声对白并抑制突发高音，LRA 自适应避免音乐场景产生抽吸感，低于门限的静音底噪自动冻结不放大。',
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.outline,
                 ),
@@ -420,7 +459,7 @@ class _LoudnessSettingPageState extends State<LoudnessSettingPage> {
             value: _showPlayerBtn,
             onChanged: _onShowBtnChanged,
           ),
-          if (hasActivePlayback)
+          if (hasActiveVideo)
             Obx(() {
               final summary = activePlayer!.loudnessActiveSummary;
               return ListTile(

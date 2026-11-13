@@ -356,7 +356,12 @@ class _LiveHeaderControlState extends State<LiveHeaderControl>
                       onTap: () => showPlayerVolumeDialog(
                         context,
                         () {},
-                        onChanged: player.setVolume,
+                        onChanged: (v) => plPlayerController.setVolumeCapped(
+                          player,
+                          v / 100,
+                          reapplyFilters:
+                              plPlayerController.applyAudioNormalization,
+                        ),
                       ),
                     ),
                 ],

@@ -1,4 +1,7 @@
+import 'dart:typed_data';
+
 import 'package:PiliPlus/models/common/audio_normalization.dart';
+import 'package:PiliPlus/models/common/loudness_waveform.dart';
 import 'package:PiliPlus/models/video/play/url.dart' show Volume;
 import 'package:flutter_test/flutter_test.dart';
 
@@ -20,8 +23,8 @@ Volume _makeVolume({
 }
 
 void main() {
-  group('AudioNormalization (BewlyCat Volume Balance)', () {
-    test('禁用模式返回空字符串以便清空 mpv af 属性', () {
+  group('AudioNormalization (Upgraded BewlyCat Engine)', () {
+    test('禁用模式返回空字符串以便清空 mpv af 属性，但仍保留 >100% 防削波增益', () {
       expect(
         AudioNormalization.buildMpvAfFilter(
           config: AudioNormalization.disableCode,
@@ -29,11 +32,19 @@ void main() {
         ),
         isEmpty,
       );
+      expect(
+        AudioNormalization.buildMpvAfFilter(
+          config: AudioNormalization.disableCode,
+          volume: _makeVolume(),
+          volumeFactor: 2.0,
+        ),
+        contains('alimiter=level_in='),
+      );
       expect(AudioNormalization.isEnabledConfig('0'), isFalse);
       expect(AudioNormalization.isEnabledConfig('bewly'), isTrue);
     });
 
-    test('过响视频生成负向预增益 + dynaudnorm + alimiter 三级滤镜链', () {
+    test('使用全平台兼容的 alimiter 预增益替代 volume 滤镜（防止 Android 静音）', () {
       final volume = _makeVolume(measuredI: -11.0);
       final af = AudioNormalization.buildMpvAfFilter(
         config: AudioNormalization.bewlyCode,
@@ -42,12 +53,13 @@ void main() {
         volume: volume,
       );
 
-      expect(af, startsWith('lavfi=[volume=-'));
-      expect(af, contains('dB,dynaudnorm=f=200:g=7:p=0.89125:'));
-      expect(af, contains(':n=1:b=1:t=0.0024,'));
+      expect(af.contains('volume='), isFalse);
+      expect(af, startsWith('lavfi=[alimiter=level_in='));
+      expect(af, contains(',dynaudnorm=f=150:'));
+      expect(af, contains(':c=1:b=1:t='));
       expect(
         af,
-        endsWith('alimiter=limit=0.89125:attack=5:release=80:level=0:latency=1]'),
+        endsWith('alimiter=limit=0.89125:attack=4:release=100:asc=1:asc_coeff=0.5:level=0]'),
       );
 
       final baseGain = AudioNormalization.computeBaseGainDb(
@@ -55,18 +67,31 @@ void main() {
         strength: 75,
         volume: volume,
       );
-      expect(baseGain, isNotNull);
-      expect(baseGain!, lessThan(-5.0));
+      expect(baseGain, -7.0);
     });
 
-    test('过轻视频生成正向预增益并严格钳制在 [-18 dB, +9 dB] 安全区间', () {
+    test('>100% 音量增益与音量均衡滤镜组合输出于同一 af 链且互不覆盖', () {
+      final af = AudioNormalization.buildMpvAfFilter(
+        config: AudioNormalization.bewlyCode,
+        targetLufs: -18,
+        strength: 75,
+        volume: _makeVolume(measuredI: -22.0),
+        volumeFactor: 1.5,
+      );
+
+      expect(af, startsWith('lavfi=[alimiter=level_in='));
+      expect(af, contains('dynaudnorm='));
+      expect(af, contains('asc=1:asc_coeff=0.5:level=0,alimiter=level_in='));
+    });
+
+    test('过轻/过响视频预增益严格钳制在 [-18 dB, +10 dB] 安全区间', () {
       final quietVolume = _makeVolume(measuredI: -32.0);
       final baseGain = AudioNormalization.computeBaseGainDb(
         targetLufs: -18,
         strength: 100,
         volume: quietVolume,
       );
-      expect(baseGain, 9.0);
+      expect(baseGain, 10.0);
 
       final extremeLoudVolume = _makeVolume(measuredI: -1.0);
       final negativeGain = AudioNormalization.computeBaseGainDb(
@@ -77,26 +102,55 @@ void main() {
       expect(negativeGain, -18.0);
     });
 
-    test('无服务端响度数据（缓存视频/直播/空 Volume）时跳过预增益并放宽局部动态提亮范围', () {
+    test('强度 0% 且已有服务端响度时跳过 dynaudnorm 以彻底保留原始动态', () {
+      final afStrength0 = AudioNormalization.buildMpvAfFilter(
+        config: AudioNormalization.bewlyCode,
+        targetLufs: -18,
+        strength: 0,
+        volume: _makeVolume(measuredI: -22.0),
+      );
+      expect(afStrength0, contains('alimiter=level_in='));
+      expect(afStrength0.contains('dynaudnorm='), isFalse);
+    });
+
+    test('LRA 自适应调制与直播低延迟配置符合预期', () {
+      final musicParams = AudioNormalization.resolveBewlyParameters(
+        targetLufs: -18,
+        strength: 75,
+        volume: _makeVolume(measuredLra: 3.5),
+      );
+      final vlogParams = AudioNormalization.resolveBewlyParameters(
+        targetLufs: -18,
+        strength: 75,
+        volume: _makeVolume(measuredLra: 14.0),
+      );
+      expect(musicParams.lraFactor, lessThan(vlogParams.lraFactor));
+      expect(musicParams.maxGainLinear, lessThan(vlogParams.maxGainLinear));
+
+      final liveGraph = AudioNormalization.buildBewlyFilterGraph(
+        targetLufs: -18,
+        strength: 75,
+        isLive: true,
+      );
+      expect(liveGraph, contains('dynaudnorm=f=80:g=7:'));
+    });
+
+    test('无服务端响度数据（缓存视频/直播/空 Volume）时跳过预增益并保留完整参数边界', () {
       final afNoVolume = AudioNormalization.buildMpvAfFilter(
         config: AudioNormalization.bewlyCode,
         targetLufs: -18,
         strength: 75,
       );
-      expect(afNoVolume, startsWith('lavfi=[dynaudnorm=f=200:'));
-      expect(afNoVolume.contains('volume='), isFalse);
-      expect(
-        afNoVolume,
-        endsWith('alimiter=limit=0.89125:attack=5:release=80:level=0:latency=1]'),
-      );
+      expect(afNoVolume, startsWith('lavfi=[dynaudnorm=f=150:'));
+      expect(afNoVolume.contains('level_in='), isFalse);
 
       final emptyVolume = Volume.fromJson(const {});
       expect(AudioNormalization.hasValidMeasuredLoudness(emptyVolume), isFalse);
     });
 
-    test('所有强度档位 (40%~100%) 生成的 dynaudnorm 高斯窗口帧数 g 恒为合法奇数', () {
-      final gRegex = RegExp(r'dynaudnorm=f=200:g=(\d+):');
-      for (int s = 40; s <= 100; s++) {
+    test('所有强度档位 (0%~100%) 生成的 dynaudnorm 高斯窗口帧数 g 恒为合法奇数', () {
+      final gRegex = RegExp(r'dynaudnorm=f=150:g=(\d+):');
+      for (int s = 0; s <= 100; s++) {
         final graph = AudioNormalization.buildBewlyFilterGraph(
           targetLufs: -18,
           strength: s,
@@ -105,7 +159,7 @@ void main() {
         expect(match, isNotNull, reason: 'strength=$s missing g parameter');
         final g = int.parse(match!.group(1)!);
         expect(g.isOdd, isTrue, reason: 'strength=$s produced even g=$g');
-        expect(g, inInclusiveRange(5, 11));
+        expect(g, inInclusiveRange(11, 15));
       }
     });
 
@@ -149,12 +203,13 @@ void main() {
         config: AudioNormalization.bewlyCode,
         targetLufs: -18,
         strength: 75,
-        volume: _makeVolume(measuredI: -13.5),
+        volume: _makeVolume(measuredI: -13.5, measuredLra: 6.4),
       );
       expect(activeSummary.enabled, isTrue);
       expect(activeSummary.isBewlyMode, isTrue);
       expect(activeSummary.shortStatusText, contains('原始 -13.5 LUFS'));
-      expect(activeSummary.shortStatusText, contains('预增益 -'));
+      expect(activeSummary.shortStatusText, contains('预增益 -4.5 dB'));
+      expect(activeSummary.shortStatusText, contains('LRA 6.4 LU'));
 
       expect(
         AudioNormalization.getSettingSummary(
@@ -164,6 +219,50 @@ void main() {
         ),
         '当前:「智能音量平衡」· 目标 -18 LUFS · 强度 75%',
       );
+    });
+  });
+
+  group('LoudnessWaveformDsp (Waveform Sampling & Simulation)', () {
+    test('Int16 PCM 字节流准确解析为 RMS 与 Peak 波形桶', () {
+      final samples = Int16List(640);
+      for (var i = 0; i < 320; i++) {
+        samples[i] = 3277; // ~0.1 (-20 dBFS)
+      }
+      for (var i = 320; i < 640; i++) {
+        samples[i] = 16384; // ~0.5 (-6 dBFS)
+      }
+      final buckets = LoudnessWaveformDsp.bucketsFromInt16Pcm(
+        samples.buffer.asUint8List(),
+        targetCount: 16,
+      );
+      expect(buckets.length, 16);
+      expect(buckets.first.rms, closeTo(0.1, 0.01));
+      expect(buckets.last.rms, closeTo(0.5, 0.01));
+    });
+
+    test('波形模拟器对轻声视频提亮且所有峰值严格限制在 -1.0 dBFS 以内', () {
+      final raw = LoudnessWaveformDsp.buildMetadataFallback(
+        volume: _makeVolume(measuredI: -28.0, measuredLra: 12.0, measuredTp: -0.4),
+      );
+      expect(raw.rawBuckets.length, LoudnessWaveformDsp.defaultBucketCount);
+
+      final simOn = LoudnessWaveformDsp.simulate(
+        raw: raw,
+        config: AudioNormalization.bewlyCode,
+        targetLufs: -18,
+        strength: 80,
+        volume: _makeVolume(measuredI: -28.0, measuredLra: 12.0, measuredTp: -0.4),
+      );
+      expect(simOn.processedAvgDb, greaterThan(simOn.rawAvgDb));
+      expect(simOn.processedPeakDb, lessThanOrEqualTo(-0.99));
+
+      final simOff = LoudnessWaveformDsp.simulate(
+        raw: raw,
+        config: AudioNormalization.disableCode,
+        targetLufs: -18,
+        strength: 80,
+      );
+      expect(simOff.processedBuckets, equals(simOff.rawBuckets));
     });
   });
 }

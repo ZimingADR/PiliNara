@@ -1,6 +1,8 @@
 import 'dart:math' as math;
 
 import 'package:PiliPlus/models/video/play/url.dart' show Volume;
+import 'package:flutter/foundation.dart' show VoidCallback;
+import 'package:media_kit/media_kit.dart' show Player;
 
 class LoudnessActiveSummary {
   const LoudnessActiveSummary({
@@ -8,9 +10,12 @@ class LoudnessActiveSummary {
     required this.modeTitle,
     required this.isBewlyMode,
     this.measuredLufs,
+    this.measuredLra,
+    this.measuredTp,
     this.baseGainDb,
     required this.targetLufs,
     required this.strength,
+    required this.isLive,
     required this.mpvAfFilter,
   });
 
@@ -18,9 +23,12 @@ class LoudnessActiveSummary {
   final String modeTitle;
   final bool isBewlyMode;
   final double? measuredLufs;
+  final double? measuredLra;
+  final double? measuredTp;
   final double? baseGainDb;
   final int targetLufs;
   final int strength;
+  final bool isLive;
   final String mpvAfFilter;
 
   String get shortStatusText {
@@ -28,9 +36,15 @@ class LoudnessActiveSummary {
     if (!isBewlyMode) return modeTitle;
     if (measuredLufs != null && baseGainDb != null) {
       final sign = baseGainDb! >= 0 ? '+' : '';
-      return '原始 ${measuredLufs!.toStringAsFixed(1)} LUFS · 预增益 $sign${baseGainDb!.toStringAsFixed(1)} dB';
+      final lraSuffix = (measuredLra != null && measuredLra! > 0.1)
+          ? ' · LRA ${measuredLra!.toStringAsFixed(1)} LU'
+          : '';
+      return '原始 ${measuredLufs!.toStringAsFixed(1)} LUFS · 预增益 $sign${baseGainDb!.toStringAsFixed(1)} dB$lraSuffix';
     }
-    return '实时局部动态均衡生效中（目标 $targetLufs LUFS）';
+    if (isLive) {
+      return '直播低延迟动态均衡中（目标 $targetLufs LUFS）';
+    }
+    return '自适应动态均衡生效中（目标 $targetLufs LUFS）';
   }
 }
 
@@ -57,15 +71,15 @@ enum AudioNormalization {
   static const int maxTargetLufs = -14;
   static const int defaultTargetLufs = -18;
 
-  static const int minStrength = 40;
+  static const int minStrength = 0;
   static const int maxStrength = 100;
   static const int defaultStrength = 75;
 
   /// -1.0 dBFS 采样峰值上限 (10^(-1/20) ≈ 0.89125)
-  static const double _peakLimitLinear = 0.89125;
+  static const double peakLimitLinear = 0.89125;
 
-  /// -50 LUFS 静音与底噪冻结门限对应的双声道单路 RMS 阈值
-  static const double _silenceGateRms = 0.0024;
+  /// -44 dBFS 基准静音/底噪冻结门限（减少人声停顿期间的底噪/BGM 抽吸）
+  static const double _baseSilenceGateRms = 0.0063;
 
   static bool isEnabledConfig(String config) =>
       config.isNotEmpty && config != disableCode;
@@ -116,6 +130,9 @@ enum AudioNormalization {
   }
 
   /// 计算跨视频基准对齐预增益（单位 dB）。无有效服务端响度数据时返回 null。
+  ///
+  /// 跨视频积分响度 100% 向 [targetLufs] 对齐，限制在 `[-18 dB, +10 dB]` 安全范围；
+  /// [strength] 仅控制视频内部动态平滑与轻声提亮深度，两者职责彻底解耦。
   static double? computeBaseGainDb({
     required int targetLufs,
     required int strength,
@@ -123,28 +140,40 @@ enum AudioNormalization {
   }) {
     if (!hasValidMeasuredLoudness(volume)) return null;
     final clampedTarget = targetLufs.clamp(minTargetLufs, maxTargetLufs);
-    final clampedStrength = strength.clamp(minStrength, maxStrength);
-    final norm =
-        (clampedStrength - minStrength) / (maxStrength - minStrength);
-    // 跨视频整体基准偏移按 75%~100% 权重先行拉齐，限制在 [-18 dB, +9 dB] 安全范围
-    final alignWeight = 0.75 + 0.25 * norm;
-    final delta = (clampedTarget - volume!.measuredI.toDouble()) * alignWeight;
-    return delta.clamp(-18.0, 9.0);
+    final delta = clampedTarget - volume!.measuredI.toDouble();
+    return delta.clamp(-18.0, 10.0);
   }
 
-  /// 构建 BewlyCat 风格三级 FFmpeg 音频滤镜图（不含外层 `lavfi=[...]`）：
-  /// 1) 跨视频基准响度预增益 (`volume`，可选)
-  /// 2) 视频内局部动态平滑与 -50 LUFS 底噪保护 (`dynaudnorm`)
-  /// 3) 5ms 前瞻 -1.0 dBFS 峰值防爆音限制器 (`alimiter`，带 PTS 延迟自动补偿)
-  static String buildBewlyFilterGraph({
+  /// 计算 LRA（响度范围）自适应动态平滑系数 `[0.55, 1.0]`：
+  /// 原本制作均衡的音乐/播客（LRA <= 4 LU）自动减轻压缩，保留音乐呼吸感；
+  /// 高动态起伏的 Vlog/影视（LRA >= 11 LU）释放完整动态均衡深度。
+  static double computeLraAdaptiveFactor(Volume? volume) {
+    if (volume == null || !hasValidMeasuredLoudness(volume)) return 1.0;
+    final lra = volume.measuredLra.toDouble();
+    if (!lra.isFinite || lra <= 0.1) return 1.0;
+    final t = ((lra - 4.0) / 7.0).clamp(0.0, 1.0);
+    return 0.55 + 0.45 * t;
+  }
+
+  /// 估算局部有效均衡参数，供真实滤镜图与波形模拟器严格保持同源一致。
+  static ({
+    double? baseGainDb,
+    double targetRms,
+    int frameMs,
+    int gaussFrames,
+    double maxGainLinear,
+    double compressFactor,
+    double silenceGate,
+    double lraFactor,
+  }) resolveBewlyParameters({
     required int targetLufs,
     required int strength,
     Volume? volume,
+    bool isLive = false,
   }) {
     final clampedTarget = targetLufs.clamp(minTargetLufs, maxTargetLufs);
     final clampedStrength = strength.clamp(minStrength, maxStrength);
-    final norm =
-        (clampedStrength - minStrength) / (maxStrength - minStrength);
+    final norm = clampedStrength / 100.0;
 
     final baseGainDb = computeBaseGainDb(
       targetLufs: clampedTarget,
@@ -152,45 +181,120 @@ enum AudioNormalization {
       volume: volume,
     );
 
+    final lraFactor = computeLraAdaptiveFactor(volume);
+    final effectiveNorm = (norm * lraFactor).clamp(0.0, 1.0);
+
     // 双声道 BS.1770 响度与每声道 RMS 映射：L_LUFS ≈ 2.319 + 20 * log10(rms)
     final targetRms = math
         .pow(10.0, (clampedTarget - 2.319) / 20.0)
         .toDouble()
         .clamp(0.02, 0.35);
 
-    // 高斯平滑窗口帧数（必须为奇数，3~301）：强度越高窗口越紧凑（40%->11帧≈2.2s，75%->7帧≈1.4s，100%->5帧≈1.0s）
-    int gaussFrames = (11 - norm * 6).round();
-    if (gaussFrames.isEven) {
-      gaussFrames -= 1;
+    // 直播采用低延迟窗口（f=80, g=7 ≈ 560ms）；
+    // 点播采用长平滑窗口（f=150, g=11..15 ≈ 1.65s..2.25s），彻底消除字句间的 BGM 抽吸感。
+    final int frameMs = isLive ? 80 : 150;
+    int gaussFrames;
+    if (isLive) {
+      gaussFrames = 7;
+    } else {
+      gaussFrames = (15 - effectiveNorm * 4).round();
+      if (gaussFrames.isEven) gaussFrames -= 1;
+      gaussFrames = gaussFrames.clamp(11, 15);
     }
-    gaussFrames = gaussFrames.clamp(5, 11);
 
-    // 最大局部提亮增益：有服务端预增益时 +4.0 ~ +9.0 dB (1.58x ~ 2.82x)；
-    // 无服务端预增益时需兼顾跨视频提亮，放宽至 +6.0 ~ +12.0 dB (2.00x ~ 3.98x)
-    final maxBoostDb = baseGainDb != null
-        ? (4.0 + 5.0 * norm)
-        : (6.0 + 6.0 * norm);
+    // 最大局部提亮增益：
+    // - strength=0 且有服务端预增益时外层会跳过 dynaudnorm；无服务端数据时保留柔和 +3 dB
+    // - 有服务端预增益时，仅补充视频内局部提亮：+1.5 ~ +8.0 dB (经 LRA 自适应缩放)
+    // - 无服务端预增益时兼顾整体拉齐：+3.0 ~ +11.0 dB
+    final double maxBoostDb = baseGainDb != null
+        ? (1.5 + 6.5 * effectiveNorm)
+        : (3.0 + 8.0 * effectiveNorm);
     final maxGainLinear = math.pow(10.0, maxBoostDb / 20.0).toDouble();
 
-    final stages = <String>[
-      if (baseGainDb != null && baseGainDb.abs() >= 0.05)
-        'volume=${baseGainDb.toStringAsFixed(2)}dB',
-      'dynaudnorm='
-          'f=200:'
-          'g=$gaussFrames:'
-          'p=${_peakLimitLinear.toStringAsFixed(5)}:'
-          'm=${maxGainLinear.toStringAsFixed(2)}:'
-          'r=${targetRms.toStringAsFixed(4)}:'
-          'n=1:'
-          'b=1:'
-          't=${_silenceGateRms.toStringAsFixed(4)}',
+    // 启用 dynaudnorm 软膝压缩 (s = 1.5 ~ 4.5)：在计算增益前柔化孤立突发尖峰，防止整句音量突然下蹲
+    final compressFactor = 1.5 + 3.0 * effectiveNorm;
+
+    // 基于噪声门限和预增益方向微调冻结门限：防止前置放大后将录音底噪误当对话提亮
+    final gateBoostAdjust =
+        (baseGainDb != null && baseGainDb > 0) ? (baseGainDb / 24.0) : 0.0;
+    final silenceGate = (_baseSilenceGateRms * (1.0 + 0.35 * gateBoostAdjust))
+        .clamp(0.0040, 0.0095);
+
+    return (
+      baseGainDb: baseGainDb,
+      targetRms: targetRms,
+      frameMs: frameMs,
+      gaussFrames: gaussFrames,
+      maxGainLinear: maxGainLinear,
+      compressFactor: compressFactor,
+      silenceGate: silenceGate,
+      lraFactor: lraFactor,
+    );
+  }
+
+  /// 构建全平台兼容的 BewlyCat 风格三级音频滤镜链（仅使用 Android / iOS / Desktop
+  /// 全平台 libmpv 均内置的 `alimiter` 与 `dynaudnorm`，绝不使用 Android 缺失的 `volume` 滤镜）：
+  /// 1) 跨视频基准响度预增益（`alimiter=level_in=...:limit=1:attack=4:release=50:level=0`，可选）
+  /// 2) LRA 自适应平滑 + 软膝峰压 + 底噪冻结门限（`dynaudnorm`，`strength == 0` 且已有预增益时跳过）
+  /// 3) 自适应释放 `-1.0 dBFS` 峰值防爆音限制器（`alimiter` + `asc=1`）
+  static String buildBewlyFilterGraph({
+    required int targetLufs,
+    required int strength,
+    Volume? volume,
+    bool isLive = false,
+  }) {
+    final params = resolveBewlyParameters(
+      targetLufs: targetLufs,
+      strength: strength,
+      volume: volume,
+      isLive: isLive,
+    );
+    final clampedStrength = strength.clamp(minStrength, maxStrength);
+
+    final stages = <String>[];
+
+    if (params.baseGainDb != null && params.baseGainDb!.abs() >= 0.05) {
+      final preGainLinear = math
+          .pow(10.0, params.baseGainDb! / 20.0)
+          .toDouble()
+          .clamp(0.015625, 64.0);
+      stages.add(
+        'alimiter='
+        'level_in=${preGainLinear.toStringAsFixed(4)}:'
+        'limit=1:'
+        'attack=4:'
+        'release=50:'
+        'level=0',
+      );
+    }
+
+    // 强度为 0% 且具备服务端精准响度时，跳过视频内局部压缩，保持原汁原味动态范围
+    final applyDynamicStage = clampedStrength > 0 || params.baseGainDb == null;
+    if (applyDynamicStage) {
+      stages.add(
+        'dynaudnorm='
+        'f=${params.frameMs}:'
+        'g=${params.gaussFrames}:'
+        'p=${peakLimitLinear.toStringAsFixed(5)}:'
+        'm=${params.maxGainLinear.toStringAsFixed(2)}:'
+        'r=${params.targetRms.toStringAsFixed(4)}:'
+        's=${params.compressFactor.toStringAsFixed(2)}:'
+        'n=1:'
+        'c=1:'
+        'b=1:'
+        't=${params.silenceGate.toStringAsFixed(4)}',
+      );
+    }
+
+    stages.add(
       'alimiter='
-          'limit=${_peakLimitLinear.toStringAsFixed(5)}:'
-          'attack=5:'
-          'release=80:'
-          'level=0:'
-          'latency=1',
-    ];
+      'limit=${peakLimitLinear.toStringAsFixed(5)}:'
+      'attack=4:'
+      'release=100:'
+      'asc=1:'
+      'asc_coeff=0.5:'
+      'level=0',
+    );
 
     return stages.join(',');
   }
@@ -201,6 +305,7 @@ enum AudioNormalization {
     String fallbackConfig = disableCode,
     int targetLufs = defaultTargetLufs,
     int strength = defaultStrength,
+    bool isLive = false,
   }) {
     if (volume != null && volume.isNotEmpty) {
       return param.replaceFirstMapped(
@@ -220,48 +325,90 @@ enum AudioNormalization {
           ? buildBewlyFilterGraph(
               targetLufs: targetLufs,
               strength: strength,
+              isLive: isLive,
             )
           : getParamFromConfig(fallbackConfig);
       return param.replaceFirst(loudnormRegExp, replacement);
     }
   }
 
-  /// 构建直接下发给 mpv `setProperty('af', ...)` 的滤镜字符串。
-  /// 禁用或无有效滤镜时返回空字符串 `''`（用于清空 mpv 当前音频滤镜）。
-  static String buildMpvAfFilter({
+  /// 计算 >100% 播放器音量时的无削波增强滤镜（使用三次方曲线，与 mpv 原生手感一致）。
+  static String? buildVolumeBoostFilter(double volumeFactor) {
+    if (volumeFactor <= 1.0) return null;
+    final db = (60 * math.log(volumeFactor) / math.ln10 * 2).round() / 2;
+    final gain = math.pow(10, db / 20).toDouble().clamp(1.0, 64.0);
+    return 'alimiter=level_in=${gain.toStringAsFixed(3)}:limit=1:level=0';
+  }
+
+  /// 构建仅包含音量均衡部分的原始滤镜串（不含 `lavfi=[...]` 外壳及超 100% 音量增益）。
+  static String buildNormalizationStages({
     required String config,
     int targetLufs = defaultTargetLufs,
     int strength = defaultStrength,
     Volume? volume,
     String fallbackConfig = disableCode,
+    bool isLive = false,
   }) {
     final trimmed = config.trim();
     if (!isEnabledConfig(trimmed) || trimmed == customCode) {
       return '';
     }
     if (trimmed == bewlyCode) {
-      final graph = buildBewlyFilterGraph(
+      return buildBewlyFilterGraph(
         targetLufs: targetLufs,
         strength: strength,
         volume: volume,
+        isLive: isLive,
       );
-      return 'lavfi=[$graph]';
     }
     final rawParam = getParamFromConfig(trimmed);
-    final parsed = parse(
+    var parsed = parse(
       volume,
       rawParam,
       fallbackConfig: fallbackConfig,
       targetLufs: targetLufs,
       strength: strength,
+      isLive: isLive,
     ).trim();
-    if (parsed.isEmpty) {
+    if (parsed.startsWith('lavfi=[') && parsed.endsWith(']')) {
+      parsed = parsed.substring(7, parsed.length - 1).trim();
+    }
+    return parsed;
+  }
+
+  /// 构建直接下发给 mpv `setProperty('af', ...)` 的完整滤镜字符串。
+  /// 同时合成音量均衡链与 >100% 播放器音量抗削波放大链，互不覆盖。
+  static String buildMpvAfFilter({
+    required String config,
+    int targetLufs = defaultTargetLufs,
+    int strength = defaultStrength,
+    Volume? volume,
+    String fallbackConfig = disableCode,
+    bool isLive = false,
+    double volumeFactor = 1.0,
+  }) {
+    final normStages = buildNormalizationStages(
+      config: config,
+      targetLufs: targetLufs,
+      strength: strength,
+      volume: volume,
+      fallbackConfig: fallbackConfig,
+      isLive: isLive,
+    );
+    final boostStage = buildVolumeBoostFilter(volumeFactor);
+
+    if (normStages.isEmpty && boostStage == null) {
       return '';
     }
-    if (parsed.startsWith('lavfi=')) {
-      return parsed;
+    if (normStages.isEmpty) {
+      return boostStage!;
     }
-    return 'lavfi=[$parsed]';
+    if (normStages.startsWith('lavfi=')) {
+      return boostStage == null ? normStages : '$normStages,$boostStage';
+    }
+    final combined =
+        boostStage == null ? normStages : '$normStages,$boostStage';
+    return 'lavfi=[$combined]';
   }
 
   static LoudnessActiveSummary describeActiveState({
@@ -270,6 +417,7 @@ enum AudioNormalization {
     required int strength,
     Volume? volume,
     String fallbackConfig = disableCode,
+    bool isLive = false,
   }) {
     final enabled = isEnabledConfig(config);
     final isBewly = config == bewlyCode;
@@ -279,13 +427,19 @@ enum AudioNormalization {
       strength: strength,
       volume: volume,
       fallbackConfig: fallbackConfig,
+      isLive: isLive,
     );
+    final validVol = hasValidMeasuredLoudness(volume);
     return LoudnessActiveSummary(
       enabled: enabled && filter.isNotEmpty,
       modeTitle: getTitleFromConfig(config),
       isBewlyMode: isBewly,
-      measuredLufs: hasValidMeasuredLoudness(volume)
-          ? volume!.measuredI.toDouble()
+      measuredLufs: validVol ? volume!.measuredI.toDouble() : null,
+      measuredLra: validVol && volume!.measuredLra.toDouble().isFinite
+          ? volume.measuredLra.toDouble()
+          : null,
+      measuredTp: validVol && volume!.measuredTp.toDouble().isFinite
+          ? volume.measuredTp.toDouble()
           : null,
       baseGainDb: isBewly
           ? computeBaseGainDb(
@@ -296,7 +450,104 @@ enum AudioNormalization {
           : null,
       targetLufs: targetLufs.clamp(minTargetLufs, maxTargetLufs),
       strength: strength.clamp(minStrength, maxStrength),
+      isLive: isLive,
       mpvAfFilter: filter,
     );
+  }
+}
+
+mixin AudioNormalizationMixin {
+  Player? _afPlayer;
+  String? _lastAppliedAf;
+  double _volumeFactor = 1.0;
+  String _cachedNormConfig = AudioNormalization.disableCode;
+  int _cachedTargetLufs = AudioNormalization.defaultTargetLufs;
+  int _cachedStrength = AudioNormalization.defaultStrength;
+  Volume? _cachedVolume;
+  String _cachedFallbackConfig = AudioNormalization.disableCode;
+  bool _cachedIsLive = false;
+  Future<void> _volumeUpdate = Future.value();
+
+  double get currentVolumeFactor => _volumeFactor;
+
+  /// 运行时由 [applyCombinedAudioFilters] 统一通过 mpv `af` 下发，不在打开媒体时重复写入 `lavfi-complex`。
+  Map<String, String>? audioFilterExtras(
+    Volume? volume, {
+    Map<String, String>? map,
+  }) => map;
+
+  /// 将当前的「音量均衡配置 + 超过 100% 的防削波增益」合成为同一条 `af` 滤镜下发，
+  /// 避免调整音量与调节音量均衡互相覆盖。
+  void applyCombinedAudioFilters(
+    Player? player, {
+    required String config,
+    required int targetLufs,
+    required int strength,
+    Volume? volume,
+    required String fallbackConfig,
+    bool isLive = false,
+  }) {
+    _cachedNormConfig = config;
+    _cachedTargetLufs = targetLufs;
+    _cachedStrength = strength;
+    _cachedVolume = volume;
+    _cachedFallbackConfig = fallbackConfig;
+    _cachedIsLive = isLive;
+
+    if (player == null) return;
+    if (!identical(_afPlayer, player)) {
+      _afPlayer = player;
+      _lastAppliedAf = null;
+    }
+    final nextAf = AudioNormalization.buildMpvAfFilter(
+      config: config,
+      targetLufs: targetLufs,
+      strength: strength,
+      volume: volume,
+      fallbackConfig: fallbackConfig,
+      isLive: isLive,
+      volumeFactor: _volumeFactor,
+    );
+    if (_lastAppliedAf == nextAf) return;
+    try {
+      player.setProperty('af', nextAf);
+      _lastAppliedAf = nextAf;
+    } catch (_) {}
+  }
+
+  /// 上游防削波音量控制（[volume] 为线性倍数，1.0 即 100%）：
+  /// mpv `volume` 恒 <= 100，>100% 的增益安全合入 `af` 尾部，绝不破坏已激活的音量均衡链。
+  Future<void>? setVolumeCapped(
+    Player? player,
+    double volume, {
+    VoidCallback? reapplyFilters,
+  }) {
+    assert(volume >= 0);
+    if (player == null) return null;
+    final previous = _volumeUpdate;
+    return _volumeUpdate = () async {
+      try {
+        await previous;
+      } catch (_) {}
+      if (!identical(_afPlayer, player)) {
+        _afPlayer = player;
+        _lastAppliedAf = null;
+      }
+      _volumeFactor = volume;
+      await player.setVolume(volume <= 1 ? volume * 100 : 100);
+      if (reapplyFilters != null) {
+        reapplyFilters();
+      } else {
+        applyCombinedAudioFilters(
+          player,
+          config: _cachedNormConfig,
+          targetLufs: _cachedTargetLufs,
+          strength: _cachedStrength,
+          volume: _cachedVolume,
+          fallbackConfig: _cachedFallbackConfig,
+          isLive: _cachedIsLive,
+        );
+      }
+    }();
   }
 }

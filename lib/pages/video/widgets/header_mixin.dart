@@ -6,7 +6,9 @@ import 'package:PiliPlus/plugin/pl_player/controller.dart';
 import 'package:PiliPlus/plugin/pl_player/utils/danmaku_options.dart';
 import 'package:PiliPlus/utils/extension/num_ext.dart';
 import 'package:PiliPlus/utils/page_utils.dart';
+import 'package:PiliPlus/utils/storage_pref.dart';
 import 'package:PiliPlus/utils/theme_utils.dart';
+import 'package:PiliPlus/widgets/loudness_waveform_card.dart';
 import 'package:get/get.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -666,7 +668,7 @@ mixin HeaderMixin<T extends StatefulWidget> on State<T> {
     )?.whenComplete(plPlayerController.persistVideoPictureSettings);
   }
 
-  /// 音量均衡（BewlyCat 风格跨视频对齐 + 局部动态平滑 + 防爆音限制）
+  /// 音量均衡（BewlyCat 风格跨视频对齐 + LRA 自适应动态平滑 + 防爆音限制 + 按需波形对比）
   void showLoudnessBalanceSheet() {
     showBottomSheet(
       (context, setState) {
@@ -682,18 +684,6 @@ mixin HeaderMixin<T extends StatefulWidget> on State<T> {
           tickMarkShape: SliderTickMarkShape.noTickMark,
         );
 
-        final mode = plPlayerController.audioNormalizationMode.value;
-        final enabled = plPlayerController.enableAudioNormalization;
-        final isBewlyMode =
-            !enabled || mode == AudioNormalization.bewlyCode;
-        final targetLufs = plPlayerController.loudnessTarget.value;
-        final strength = plPlayerController.loudnessStrength.value;
-        final summary = plPlayerController.loudnessActiveSummary;
-        final isAllDefault =
-            mode == AudioNormalization.bewlyCode &&
-            targetLufs == AudioNormalization.defaultTargetLufs &&
-            strength == AudioNormalization.defaultStrength;
-
         return Padding(
           padding: const EdgeInsets.all(12),
           child: Material(
@@ -704,169 +694,207 @@ mixin HeaderMixin<T extends StatefulWidget> on State<T> {
               padding: const EdgeInsets.symmetric(horizontal: 14),
               child: SliderTheme(
                 data: sliderTheme,
-                child: ListView(
-                  padding: EdgeInsets.zero,
-                  children: [
-                    SizedBox(
-                      height: 45,
-                      child: Row(
-                        children: [
-                          iconButton(
-                            tooltip: '详细设置',
-                            icon: const Icon(Icons.settings_outlined),
-                            onPressed: () {
-                              Get
-                                ..back()
-                                ..toNamed('/loudnessSetting');
-                            },
-                            iconColor: theme.colorScheme.outline,
-                            size: 24,
-                            iconSize: 20,
-                          ),
-                          const Expanded(
-                            child: Center(
-                              child: Text(
-                                '音量均衡',
-                                style: TextStyle(fontSize: 14),
-                              ),
-                            ),
-                          ),
-                          iconButton(
-                            tooltip: '恢复默认',
-                            icon: const Icon(Icons.refresh),
-                            onPressed: isAllDefault
-                                ? null
-                                : () {
-                                    plPlayerController.resetLoudnessSettings();
-                                    setState(() {});
-                                  },
-                            iconColor: theme.colorScheme.outline,
-                            size: 24,
-                            iconSize: 24,
-                          ),
-                        ],
-                      ),
-                    ),
-                    SwitchListTile(
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text(
-                        '启用音量均衡',
-                        style: TextStyle(fontSize: 14),
-                      ),
-                      subtitle: Text(
-                        summary.shortStatusText,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: summary.enabled
-                              ? theme.colorScheme.primary
-                              : theme.colorScheme.outline,
-                        ),
-                      ),
-                      value: enabled,
-                      onChanged: (value) {
-                        plPlayerController.toggleLoudnessBalance(value);
-                        setState(() {});
-                      },
-                    ),
-                    const SizedBox(height: 8),
-                    if (!isBewlyMode)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
+                child: Obx(() {
+                  final mode = plPlayerController.audioNormalizationMode.value;
+                  final enabled = plPlayerController.enableAudioNormalization;
+                  final isBewlyMode =
+                      !enabled || mode == AudioNormalization.bewlyCode;
+                  final targetLufs = plPlayerController.loudnessTarget.value;
+                  final strength = plPlayerController.loudnessStrength.value;
+                  final summary = plPlayerController.loudnessActiveSummary;
+                  final volume = plPlayerController.currentVolume.value;
+                  final dataSource = plPlayerController.safeDataSource;
+                  final player = plPlayerController.videoPlayerController;
+                  final isAllDefault =
+                      mode == AudioNormalization.bewlyCode &&
+                      targetLufs == AudioNormalization.defaultTargetLufs &&
+                      strength == AudioNormalization.defaultStrength;
+
+                  return ListView(
+                    padding: EdgeInsets.zero,
+                    children: [
+                      SizedBox(
+                        height: 45,
                         child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Expanded(
-                              child: Text(
-                                '当前模式：${AudioNormalization.getTitleFromConfig(mode)}',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 13),
+                            iconButton(
+                              tooltip: '详细设置',
+                              icon: const Icon(Icons.settings_outlined),
+                              onPressed: () {
+                                Get
+                                  ..back()
+                                  ..toNamed('/loudnessSetting');
+                              },
+                              iconColor: theme.colorScheme.outline,
+                              size: 24,
+                              iconSize: 20,
+                            ),
+                            const Expanded(
+                              child: Center(
+                                child: Text(
+                                  '音量均衡',
+                                  style: TextStyle(fontSize: 14),
+                                ),
                               ),
                             ),
-                            TextButton(
-                              onPressed: () {
-                                plPlayerController.setAudioNormalizationMode(
-                                  AudioNormalization.bewlyCode,
-                                );
-                                setState(() {});
-                              },
-                              child: const Text('切换至智能音量平衡'),
+                            iconButton(
+                              tooltip: '恢复默认',
+                              icon: const Icon(Icons.refresh),
+                              onPressed: isAllDefault
+                                  ? null
+                                  : () {
+                                      plPlayerController
+                                          .resetLoudnessSettings();
+                                      setState(() {});
+                                    },
+                              iconColor: theme.colorScheme.outline,
+                              size: 24,
+                              iconSize: 24,
                             ),
                           ],
                         ),
-                      )
-                    else ...[
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text('目标响度 $targetLufs LUFS'),
-                          resetBtn(
-                            theme,
-                            '${AudioNormalization.defaultTargetLufs} LUFS',
-                            () {
-                              plPlayerController.resetLoudnessTarget();
-                              setState(() {});
-                            },
-                          ),
-                        ],
                       ),
-                      Padding(
-                        padding: const .symmetric(vertical: 16),
-                        child: Slider(
-                          min: AudioNormalization.minTargetLufs.toDouble(),
-                          max: AudioNormalization.maxTargetLufs.toDouble(),
-                          divisions: AudioNormalization.maxTargetLufs -
-                              AudioNormalization.minTargetLufs,
-                          value: targetLufs.toDouble(),
-                          label: '$targetLufs LUFS',
-                          onChanged: (value) {
-                            plPlayerController.setLoudnessTarget(value);
-                            setState(() {});
-                          },
+                      SwitchListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text(
+                          '启用音量均衡',
+                          style: TextStyle(fontSize: 14),
                         ),
+                        subtitle: Text(
+                          summary.shortStatusText,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: summary.enabled
+                                ? theme.colorScheme.primary
+                                : theme.colorScheme.outline,
+                          ),
+                        ),
+                        value: enabled,
+                        onChanged: (value) {
+                          plPlayerController.toggleLoudnessBalance(value);
+                          setState(() {});
+                        },
                       ),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text('均衡强度 $strength%'),
-                          resetBtn(
-                            theme,
-                            '${AudioNormalization.defaultStrength}%',
-                            () {
-                              plPlayerController.resetLoudnessStrength();
+                      const SizedBox(height: 6),
+                      LoudnessWaveformCard(
+                        enabled: enabled,
+                        config: mode,
+                        targetLufs: targetLufs,
+                        strength: strength,
+                        fallbackConfig: Pref.fallbackNormalization,
+                        isLive: plPlayerController.isLive,
+                        volume: volume,
+                        audioUrl: dataSource?.audioSource,
+                        videoUrl: dataSource?.videoSource,
+                        isFileSource: plPlayerController.isFileSource,
+                        position: player?.state.position ??
+                            Duration(seconds: plPlayerController.position.value),
+                        duration: Duration(
+                          seconds: plPlayerController.duration.value,
+                        ),
+                        positionStream: player?.stream.position,
+                        compact: true,
+                      ),
+                      const SizedBox(height: 12),
+                      if (!isBewlyMode)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  '当前模式：${AudioNormalization.getTitleFromConfig(mode)}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 13),
+                                ),
+                              ),
+                              TextButton(
+                                onPressed: () {
+                                  plPlayerController.setAudioNormalizationMode(
+                                    AudioNormalization.bewlyCode,
+                                  );
+                                  setState(() {});
+                                },
+                                child: const Text('切换至智能音量平衡'),
+                              ),
+                            ],
+                          ),
+                        )
+                      else ...[
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text('目标响度 $targetLufs LUFS'),
+                            resetBtn(
+                              theme,
+                              '${AudioNormalization.defaultTargetLufs} LUFS',
+                              () {
+                                plPlayerController.resetLoudnessTarget();
+                                setState(() {});
+                              },
+                            ),
+                          ],
+                        ),
+                        Padding(
+                          padding: const .symmetric(vertical: 14),
+                          child: Slider(
+                            min: AudioNormalization.minTargetLufs.toDouble(),
+                            max: AudioNormalization.maxTargetLufs.toDouble(),
+                            divisions: AudioNormalization.maxTargetLufs -
+                                AudioNormalization.minTargetLufs,
+                            value: targetLufs.toDouble(),
+                            label: '$targetLufs LUFS',
+                            onChanged: (value) {
+                              plPlayerController.setLoudnessTarget(value);
                               setState(() {});
                             },
                           ),
-                        ],
-                      ),
+                        ),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text('均衡强度 $strength%'),
+                            resetBtn(
+                              theme,
+                              '${AudioNormalization.defaultStrength}%',
+                              () {
+                                plPlayerController.resetLoudnessStrength();
+                                setState(() {});
+                              },
+                            ),
+                          ],
+                        ),
+                        Padding(
+                          padding: const .symmetric(vertical: 14),
+                          child: Slider(
+                            min: AudioNormalization.minStrength.toDouble(),
+                            max: AudioNormalization.maxStrength.toDouble(),
+                            divisions: 20,
+                            value: strength.toDouble(),
+                            label: '$strength%',
+                            onChanged: (value) {
+                              plPlayerController.setLoudnessStrength(value);
+                              setState(() {});
+                            },
+                          ),
+                        ),
+                      ],
                       Padding(
-                        padding: const .symmetric(vertical: 16),
-                        child: Slider(
-                          min: AudioNormalization.minStrength.toDouble(),
-                          max: AudioNormalization.maxStrength.toDouble(),
-                          divisions: 12,
-                          value: strength.toDouble(),
-                          label: '$strength%',
-                          onChanged: (value) {
-                            plPlayerController.setLoudnessStrength(value);
-                            setState(() {});
-                          },
+                        padding: const EdgeInsets.only(top: 4, bottom: 14),
+                        child: Text(
+                          '跨视频对齐目标响度，结合 LRA 自适应动态平滑与 -1.0 dBFS 峰值防破音（后台播放与听视频同样生效）',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: theme.colorScheme.outline,
+                          ),
                         ),
                       ),
                     ],
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4, bottom: 14),
-                      child: Text(
-                        '自动拉齐不同视频音量，平滑单视频内轻声与高音起伏，并限制 -1.0 dBFS 峰值防破音（后台播放与听视频同样生效）',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: theme.colorScheme.outline,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+                  );
+                }),
               ),
             ),
           ),
