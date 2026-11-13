@@ -36,6 +36,17 @@
       },
       "versions": [
         {
+          "version": "2.2.6237",
+          "buildVersion": "6237",
+          "buildNumber": "6237",
+          "date": "2026-11-13T08:11:15Z",
+          "localizedDescription": "PiliNara iOS 2.2.6237 (Build 6237)\n- 同步上游最新更新并融合 BewlyCat 智能音量平衡\n- 最新提交: feat(audio): merge upstream & upgrade loudness algorithm + on-demand waveform comparison\n- 近期上游更新摘录:\n  · ci(linux): 补装 elfutils 修复 rpm 打包缺 eu-strip\n  · feat(changelog): 添加 2.6.2 -[Aha] 更新日志\n  · style(settings): align dynamics icon with upstream\n  · feat(search): support hash-prefixed video tag filters\n  · feat(ai-chat): support request cancellation from send button\n  · feat: pick rcmd source in a dialog with per-source description (#3517)",
+          "downloadURL": "https://github.com/ZimingADR/PiliNara/releases/download/v2.2.6237/PiliNara_ios_2.2.6237.ipa",
+          "size": 33032583,
+          "sha256": "99427279ef40c1d61dff2ec23bdb0d663616f56dbc52df79e1878a52f4664cdc",
+          "minOSVersion": "15.0"
+        },
+        {
           "version": "2.2.6199",
           "buildVersion": "6199",
           "buildNumber": "6199",
@@ -58,11 +69,11 @@
           "minOSVersion": "15.0"
         }
       ],
-      "version": "2.2.6199",
-      "versionDate": "2026-11-07T07:56:19Z",
-      "versionDescription": "PiliNara iOS 2.2.6199 (Build 6199)\n- 同步上游最新更新并融合 BewlyCat 智能音量平衡\n- 最新提交: chore(sync): merge upstream Starfallan/PiliNara@1db0d72e4 (v2.2.0) & add automated upstream sync workflow\n- 近期上游更新摘录:\n  · fix(player): defer desktop touch fullscreen until pointer release\n  · fix(player): prevent trackpad seeking from panning video (#417)\n  · fix(player): restore speed when switching videos during long press\n  · upgrade deps\n  · fix AppSign\n  · show aid in intro panel",
-      "downloadURL": "https://github.com/ZimingADR/PiliNara/releases/download/v2.2.6199/PiliNara_ios_2.2.6199.ipa",
-      "size": 32914603
+      "version": "2.2.6237",
+      "versionDate": "2026-11-13T08:11:15Z",
+      "versionDescription": "PiliNara iOS 2.2.6237 (Build 6237)\n- 同步上游最新更新并融合 BewlyCat 智能音量平衡\n- 最新提交: feat(audio): merge upstream & upgrade loudness algorithm + on-demand waveform comparison\n- 近期上游更新摘录:\n  · ci(linux): 补装 elfutils 修复 rpm 打包缺 eu-strip\n  · feat(changelog): 添加 2.6.2 -[Aha] 更新日志\n  · style(settings): align dynamics icon with upstream\n  · feat(search): support hash-prefixed video tag filters\n  · feat(ai-chat): support request cancellation from send button\n  · feat: pick rcmd source in a dialog with per-source description (#3517)",
+      "downloadURL": "https://github.com/ZimingADR/PiliNara/releases/download/v2.2.6237/PiliNara_ios_2.2.6237.ipa",
+      "size": 33032583
     }
   ],
   "news": []
