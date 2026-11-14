@@ -36,6 +36,17 @@
       },
       "versions": [
         {
+          "version": "2.2.6241",
+          "buildVersion": "6241",
+          "buildNumber": "6241",
+          "date": "2026-11-14T12:54:08Z",
+          "localizedDescription": "PiliNara iOS 2.2.6241 (Build 6241)\n- 融合 BewlyCat 智能音量平衡（跨视频响度对齐 + 视频内局部动态平滑 + -1.0 dBFS 峰值防破音）\n- 支持普通播放、后台播放、后台只听音频、听视频、独立听音频、画中画、离线缓存与直播\n- 提交记录: fix(audio): fix invalid alimiter option asc_coeff causing silent audio and dynaudnorm pause pump",
+          "downloadURL": "https://github.com/ZimingADR/PiliNara/releases/download/v2.2.6241/PiliNara_ios_2.2.6241.ipa",
+          "size": 32996336,
+          "sha256": "504ce9e7a57c0a04f4ea17169ab5415c78a55b84aecd4cf54d12ef6b62f23ab7",
+          "minOSVersion": "15.0"
+        },
+        {
           "version": "2.2.6239",
           "buildVersion": "6239",
           "buildNumber": "6239",
@@ -80,11 +91,11 @@
           "minOSVersion": "15.0"
         }
       ],
-      "version": "2.2.6239",
-      "versionDate": "2026-11-13T09:05:10Z",
-      "versionDescription": "PiliNara iOS 2.2.6239 (Build 6239)\n- 融合 BewlyCat 智能音量平衡（跨视频响度对齐 + 视频内局部动态平滑 + -1.0 dBFS 峰值防破音）\n- 支持普通播放、后台播放、后台只听音频、听视频、独立听音频、画中画、离线缓存与直播\n- 提交记录: refactor(audio): remove experimental loudness waveform comparison card",
-      "downloadURL": "https://github.com/ZimingADR/PiliNara/releases/download/v2.2.6239/PiliNara_ios_2.2.6239.ipa",
-      "size": 32996870
+      "version": "2.2.6241",
+      "versionDate": "2026-11-14T12:54:08Z",
+      "versionDescription": "PiliNara iOS 2.2.6241 (Build 6241)\n- 融合 BewlyCat 智能音量平衡（跨视频响度对齐 + 视频内局部动态平滑 + -1.0 dBFS 峰值防破音）\n- 支持普通播放、后台播放、后台只听音频、听视频、独立听音频、画中画、离线缓存与直播\n- 提交记录: fix(audio): fix invalid alimiter option asc_coeff causing silent audio and dynaudnorm pause pump",
+      "downloadURL": "https://github.com/ZimingADR/PiliNara/releases/download/v2.2.6241/PiliNara_ios_2.2.6241.ipa",
+      "size": 32996336
     }
   ],
   "news": []
